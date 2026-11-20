@@ -1,7 +1,6 @@
 import sqlite3
 from datetime import datetime
 import feedparser
-import requests
 import yfinance as yf
 
 DB_NAME = "market_radar.db"
@@ -46,23 +45,19 @@ def collect_news():
     added_count = 0
     logs = []
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    }
-
-    # 1. Русскоязычные финансовые ленты (Smart-Lab, Banki.ru, Finam)
-    ru_feeds = [
-        ("Smart-Lab (Акции РФ)", "РФ", "https://smart-lab.ru"),
-        ("Smart-Lab (Блоги/Шум)", "РФ", "https://smart-lab.ru"),
-        ("Banki.ru (Финансы РФ)", "РФ", "https://banki.ru"),
-        ("Bits.media (Крипта РФ)", "Крипта", "https://bits.media"),
+    # 1. Рынок РФ и Крипта на русском языке через Bing News RSS и Google News RSS
+    # (работают из облака США без гео-блокировок)
+    news_feeds = [
+        ("Bing News (Акции РФ)", "РФ", "https://bing.com"),
+        ("Bing News (Экономика/ЦБ)", "РФ", "https://bing.com"),
+        ("Google News (Рынок РФ)", "РФ", "https://google.com"),
+        ("Bing News (Крипта RU)", "Крипта", "https://bing.com"),
     ]
 
     ru_added = 0
-    for name, market, url in ru_feeds:
+    for name, market, url in news_feeds:
         try:
-            r = requests.get(url, headers=headers, timeout=10)
-            feed = feedparser.parse(r.content)
+            feed = feedparser.parse(url)
             f_added = 0
             for entry in feed.entries[:25]:
                 title = entry.get("title", "")
