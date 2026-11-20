@@ -14,14 +14,18 @@ DB_NAME = "market_radar.db"
 init_db()
 init_tags_table()
 
-# Сопоставление тикеров с рабочими биржевыми инструментами для графика
 CHART_TICKER_MAP = {
-    "IMOEX.ME": ("USDRUB=X", "Курс USD/RUB (индикатор рынка РФ)"),
-    "SBER.ME": ("USDRUB=X", "Курс USD/RUB (индикатор фин. сектора РФ)"),
-    "GAZP.ME": ("NG=F", "Фьючерс на природный газ (индикатор Газпрома)"),
+    "IMOEX.ME": ("USDRUB=X", "Курс USD/RUB (индикатор Индекса Мосбиржи)"),
+    "SBER.ME": ("USDRUB=X", "Курс USD/RUB (индикатор Сбербанка)"),
+    "BSPB.ME": ("USDRUB=X", "Курс USD/RUB (индикатор Банка СПб)"),
     "LKOH.ME": ("BZ=F", "Нефть Brent (главный драйвер Лукойла)"),
-    "ROSN.ME": ("BZ=F", "Нефть Brent (главный драйвер Роснефти)"),
-    "YDEX.ME": ("NASDAQ:NDX", "Индекс NASDAQ (бенчмарк техсектора)"),
+    "TATN.ME": ("BZ=F", "Нефть Brent (главный драйвер Татнефти)"),
+    "TRNFP.ME": ("BZ=F", "Нефть Brent (главный драйвер Транснефти)"),
+    "NVTK.ME": ("NG=F", "Природный газ (главный драйвер Новатэка)"),
+    "PLZL.ME": ("GC=F", "Золото (главный драйвер Полюса)"),
+    "X5.ME": ("USDRUB=X", "Курс USD/RUB (индикатор ритейла X5)"),
+    "LSNGP.ME": ("USDRUB=X", "Курс USD/RUB (индикатор Ленэнерго)"),
+    "GAZP.ME": ("NG=F", "Природный газ (индикатор Газпрома)"),
 }
 
 
@@ -60,9 +64,12 @@ with st.sidebar:
 
     st.divider()
     st.header("💼 Мой портфель")
-    st.caption("Укажите тикеры через запятую (например: BTC-USD, NVDA, AAPL, SBER.ME, GAZP.ME, LKOH.ME)")
-    default_portfolio = "BTC-USD, ETH-USD, NVDA, AAPL, SBER.ME, GAZP.ME, LKOH.ME"
-    user_tickers_raw = st.text_area("Ваши активы:", value=default_portfolio, height=100)
+    st.caption("Ваши активы отслеживаются автоматически:")
+    default_portfolio = (
+        "BTC-USD, ETH-USD, SOL-USD, TON-USD, XRP-USD, LINK-USD, HYPE-USD, NEAR-USD, AAVE-USD, "
+        "IMOEX.ME, SBER.ME, LKOH.ME, TATN.ME, X5.ME, TRNFP.ME, NVTK.ME, BSPB.ME, LSNGP.ME, PLZL.ME"
+    )
+    user_tickers_raw = st.text_area("Ваши активы:", value=default_portfolio, height=130)
     portfolio_tickers = [t.strip().upper() for t in user_tickers_raw.split(",") if t.strip()]
 
 conn = sqlite3.connect(DB_NAME)
@@ -138,7 +145,7 @@ st.divider()
 # БЛОК 3: Влияние выбранного тега на график цены
 st.subheader("📈 Связь выбранного тега с движением рынка")
 selected_tag = st.selectbox("Выберите тег для проверки реакции цены:", options=tag_stats["tag"].unique())
-ticker_symbol = tag_stats.loc[tag_stats["tag"] == selected_tag, "ticker"].values[0]
+ticker_symbol = tag_stats.loc[tag_stats["tag"] == selected_tag, "ticker"].values
 
 c1, c2 = st.columns([1.3, 1])
 with c1:
