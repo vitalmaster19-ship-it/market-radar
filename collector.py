@@ -1,7 +1,7 @@
+import re
 import sqlite3
 from datetime import datetime
-from curl_cffi import requests as cffi_requests
-import feedparser
+from deep_translator import GoogleTranslator
 import yfinance as yf
 
 DB_NAME = "market_radar.db"
@@ -39,73 +39,77 @@ def save_news(cursor, source, market, title, summary, link, published):
         return 0
 
 
+def detect_ru_market(text, default_market):
+    """Если мировая новость касается России, нефти/газа РФ, рубля или санкций — относим к рынку РФ."""
+    ru_keywords = r"\b(russia\w*|ruble\w*|rouble\w*|moscow|kremlin|gazprom|lukoil|rosneft|sberbank|urals|novatek|opec\+?)\b"
+    if re.search(ru_keywords, text, flags=re.IGNORECASE):
+        return "РФ"
+    return default_market
+
+
 def collect_news():
     init_db()
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     added_count = 0
     logs = []
+    translator = GoogleTranslator(source="en", target="ru")
 
-    # Используем curl_cffi с TLS-отпечатком реального Chrome (обходит антибот-фильтры)
-    ru_feeds = [
-        ("Habr Финансы (RU)", "РФ", "https://habr.com"),
-        ("Коммерсантъ (Экономика)", "РФ", "https://kommersant.ru"),
-        ("Лента.ру (Экономика)", "РФ", "https://lenta.ru"),
-        ("ForkLog (Крипта RU)", "Крипта", "https://forklog.com"),
-        ("Bits.media (Крипта RU)", "Крипта", "https://bits.media"),
-    ]
-
-    ru_added = 0
-    for name, market, url in ru_feeds:
-        try:
-            r = cffi_requests.get(url, impersonate="chrome", timeout=10)
-            feed = feedparser.parse(r.text)
-            f_added = 0
-            for entry in feed.entries[:25]:
-                title = entry.get("title", "")
-                summary = entry.get("summary", entry.get("description", ""))
-                link = entry.get("link", "")
-                pub = entry.get("published", datetime.now().isoformat())
-                f_added += save_news(cursor, name, market, title, summary, link, pub)
-            ru_added += f_added
-            logs.append(f"{name}: +{f_added}")
-        except Exception as e:
-            logs.append(f"{name} err: {str(e)[:35]}")
-
-    added_count += ru_added
-
-    # Рынок США и Крипта через yfinance
     yf_targets = [
+        # Крипта
         ("BTC-USD", "Крипта"),
         ("ETH-USD", "Крипта"),
         ("SOL-USD", "Крипта"),
+        # США и Макро
         ("NVDA", "США"),
         ("AAPL", "США"),
         ("TSLA", "США"),
         ("MSFT", "США"),
         ("^GSPC", "США"),
-        ("BZ=F", "США"),
+        # Сырье, Валюта и РФ-контекст
+        ("BZ=F", "РФ"),
+        ("NG=F", "РФ"),
         ("GC=F", "США"),
+        ("USDRUB=X", "РФ"),
     ]
 
-    yf_added = 0
-    for ticker, market in yf_targets:
+    market_counts = {"РФ": 0, "США": 0, "Крипта": 0}
+
+    for ticker, default_market in yf_targets:
         try:
             news_list = yf.Ticker(ticker).news
             for item in news_list:
                 content = item.get("content", item)
-                title = content.get("title", "")
-                summary = content.get("summary", title)
+                raw_title = content.get("title", "")
+                raw_summary = content.get("summary", raw_title)
                 provider = content.get("provider", {}).get("displayName", "Yahoo Finance")
                 link_obj = content.get("canonicalUrl") or content.get("clickThroughUrl") or {}
                 link = link_obj.get("url") if isinstance(link_obj, dict) else content.get("link", "")
                 pub = content.get("pubDate", datetime.now().isoformat())
-                yf_added += save_news(cursor, provider, market, title, summary, link, pub)
-        except Exception:
-            pass
 
-    added_count += yf_added
-    logs.insert(0, f"РФ/Крипта (RU): +{ru_added} | США/Крипта (EN): +{yf_added}")
+                if not raw_title or not link:
+                    continue
+
+                # Проверяем, не добавлена ли уже эта ссылка (чтобы не тратить время на перевод дублей)
+                cursor.execute("SELECT 1 FROM news WHERE link = ?", (link.strip(),))
+                if cursor.fetchone():
+                    continue
+
+                actual_market = detect_ru_market(f"{raw_title} {raw_summary}", default_market)
+
+                # Переводим заголовок на русский язык
+                try:
+                    ru_title = translator.translate(raw_title)
+                except Exception:
+                    ru_title = raw_title
+
+                added = save_news(cursor, provider, actual_market, ru_title, f"{ru_title} ({raw_title})", link, pub)
+                added_count += added
+                market_counts[actual_market] += added
+        except Exception as e:
+            logs.append(f"{ticker}: {str(e)[:30]}")
+
+    logs.insert(0, f"РФ/Сырье: +{market_counts['РФ']} | США: +{market_counts['США']} | Крипта: +{market_counts['Крипта']}")
 
     conn.commit()
     conn.close()
