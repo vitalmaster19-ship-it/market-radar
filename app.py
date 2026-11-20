@@ -138,8 +138,7 @@ st.divider()
 # БЛОК 3: Влияние выбранного тега на график цены
 st.subheader("📈 Связь выбранного тега с движением рынка")
 selected_tag = st.selectbox("Выберите тег для проверки реакции цены:", options=tag_stats["tag"].unique())
-tag_row = tag_stats[tag_stats["tag"] == selected_tag].iloc
-ticker_symbol = tag_row["ticker"]
+ticker_symbol = tag_stats.loc[tag_stats["tag"] == selected_tag, "ticker"].values[0]
 
 c1, c2 = st.columns([1.3, 1])
 with c1:
