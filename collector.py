@@ -1,5 +1,6 @@
 import sqlite3
 from datetime import datetime
+import feedparser
 import requests
 
 DB_NAME = "market_radar.db"
@@ -45,57 +46,43 @@ def collect_news():
     logs = []
 
     headers = {
-        "User-Agent": "MarketRadarBot/1.0 (Educational Finance Project)"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
 
-    # 1. Крипторынок (CryptoCompare Open API)
-    try:
-        r = requests.get("https://cryptocompare.com", headers=headers, timeout=10)
-        data = r.json().get("Data", [])
-        c_added = 0
-        for item in data[:40]:
-            c_added += save_news(
-                cursor,
-                item.get("source_info", {}).get("name", "CryptoCompare"),
-                "Крипта",
-                item.get("title", ""),
-                item.get("body", "")[:300],
-                item.get("url", ""),
-                datetime.fromtimestamp(item.get("published_on", 0)).isoformat()
-            )
-        added_count += c_added
-        logs.append(f"Крипта (CryptoCompare): +{c_added}")
-    except Exception as e:
-        logs.append(f"Крипта ошибка: {e}")
+    # 1. Надежные RSS и Google News (отлично работают из облака США)
+    feeds = [
+        ("Google News РФ", "РФ", "https://google.com"),
+        ("ТАСС Экономика", "РФ", "https://tass.ru"),
+        ("Google News США", "США", "https://google.com"),
+        ("CNBC Finance", "США", "https://cnbc.com"),
+        ("CoinTelegraph", "Крипта", "https://cointelegraph.com"),
+        ("Google News Крипта", "Крипта", "https://google.com"),
+    ]
 
-    # 2. Рынок РФ (Официальный открытый API Московской Биржи)
-    try:
-        r = requests.get("https://moex.com", headers=headers, timeout=10)
-        news_block = r.json().get("sitenews", {})
-        columns = news_block.get("columns", [])
-        rows = news_block.get("data", [])
-        m_added = 0
-        if "title" in columns and "id" in columns:
-            idx_id = columns.index("id")
-            idx_title = columns.index("title")
-            idx_date = columns.index("published_at") if "published_at" in columns else None
-            for row in rows[:40]:
-                news_id = row[idx_id]
-                title = row[idx_title]
-                pub = row[idx_date] if idx_date is not None else datetime.now().isoformat()
-                link = f"https://moex.com{news_id}"
-                m_added += save_news(cursor, "Мосбиржа (MOEX)", "РФ", title, title, link, pub)
-        added_count += m_added
-        logs.append(f"РФ (MOEX API): +{m_added}")
-    except Exception as e:
-        logs.append(f"РФ ошибка: {e}")
-
-    # 3. Рынок США (Reddit r/stocks и r/investing)
-    for sub in ["stocks", "investing"]:
+    for name, market, url in feeds:
         try:
-            r = requests.get(f"https://reddit.com{sub}/hot.json?limit=25", headers=headers, timeout=10)
+            r = requests.get(url, headers=headers, timeout=10)
+            parsed = feedparser.parse(r.content)
+            f_added = 0
+            for entry in parsed.entries[:25]:
+                title = entry.get("title", "")
+                summary = entry.get("summary", entry.get("description", ""))
+                link = entry.get("link", "")
+                pub = entry.get("published", datetime.now().isoformat())
+                f_added += save_news(cursor, name, market, title, summary, link, pub)
+            added_count += f_added
+            logs.append(f"{name}: +{f_added}")
+        except Exception as e:
+            logs.append(f"{name} ошибка: {str(e)[:60]}")
+
+    # 2. Reddit Finance (исправленная ссылка)
+    for sub in ["stocks", "CryptoCurrency"]:
+        try:
+            reddit_url = "https://reddit.com" + "/r/" + sub + "/hot.json?limit=20"
+            r = requests.get(reddit_url, headers={"User-Agent": "python:marketradar:v1.0"}, timeout=10)
             posts = r.json().get("data", {}).get("children", [])
             r_added = 0
+            market_label = "Крипта" if sub == "CryptoCurrency" else "США"
             for post in posts:
                 p = post.get("data", {})
                 if p.get("stickied"):
@@ -103,16 +90,16 @@ def collect_news():
                 r_added += save_news(
                     cursor,
                     f"Reddit r/{sub}",
-                    "США",
+                    market_label,
                     p.get("title", ""),
                     p.get("selftext", "")[:300],
-                    f"https://reddit.com{p.get('permalink', '')}",
+                    "https://reddit.com" + p.get("permalink", ""),
                     datetime.fromtimestamp(p.get("created_utc", 0)).isoformat()
                 )
             added_count += r_added
-            logs.append(f"США (r/{sub}): +{r_added}")
+            logs.append(f"Reddit r/{sub}: +{r_added}")
         except Exception as e:
-            logs.append(f"США (r/{sub}) ошибка: {e}")
+            logs.append(f"Reddit r/{sub} ошибка: {str(e)[:60]}")
 
     conn.commit()
     conn.close()
