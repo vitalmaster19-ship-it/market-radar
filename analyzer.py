@@ -5,28 +5,37 @@ from datetime import datetime
 DB_NAME = "market_radar.db"
 
 TOPICS = [
+    # Ваш криптопортфель
     (r"\b(биткоин\w*|bitcoin|btc)\b", "#Биткоин", "BTC-USD"),
     (r"\b(эфир\w*|ethereum|eth)\b", "#Эфириум", "ETH-USD"),
     (r"\b(солана|solana|sol)\b", "#Solana", "SOL-USD"),
-    (r"\b(крипт\w*|crypto\w*|блокчейн\w*)\b", "#Крипторынок", "BTC-USD"),
-    (r"\b(цб|центробанк\w*|набиуллин\w*|ключев\w+\s+ставк\w*)\b", "#СтавкаЦБ", "IMOEX.ME"),
+    (r"\b(ton|toncoin|тонкоин|дуров\w*|telegram)\b", "#Toncoin", "TON-USD"),
+    (r"\b(xrp|ripple|рипл)\b", "#Ripple", "XRP-USD"),
+    (r"\b(link|chainlink|чейнлинк)\b", "#Chainlink", "LINK-USD"),
+    (r"\b(hype|hyperliquid|гиперликвид)\b", "#Hyperliquid", "HYPE-USD"),
+    (r"\b(near|near\s+protocol)\b", "#NEAR", "NEAR-USD"),
+    (r"\b(aave|ааве)\b", "#Aave", "AAVE-USD"),
+    (r"\b(крипт\w*|crypto\w*|блокчейн\w*|defi)\b", "#Крипторынок", "BTC-USD"),
+
+    # Ваш портфель РФ
+    (r"\b(индекс\s+мосбирж\w*|imoex|мосбирж\w*|moex)\b", "#ИндексМосбиржи", "IMOEX.ME"),
     (r"\b(сбер\w*|sber\w*)\b", "#Сбербанк", "SBER.ME"),
-    (r"\b(газпром\w*|gazprom)\b", "#Газпром", "GAZP.ME"),
     (r"\b(лукойл\w*|lukoil)\b", "#Лукойл", "LKOH.ME"),
-    (r"\b(роснефт\w*|rosneft)\b", "#Роснефть", "ROSN.ME"),
-    (r"\b(яндекс\w*|yandex|ydex)\b", "#Яндекс", "YDEX.ME"),
-    (r"\b(мосбирж\w*|moex)\b", "#Мосбиржа", "MOEX.ME"),
-    (r"\b(рубл\w*|доллар\w*|юан\w*|валют\w*)\b", "#ВалютаРФ", "USDRUB=X"),
-    (r"\b(санкци\w*|sanctions)\b", "#Санкции", "IMOEX.ME"),
-    (r"\b(дивиденд\w*|dividends?)\b", "#Дивиденды", "IMOEX.ME"),
-    (r"\b(фрс|fed|federal\s+reserve|пауэлл\w*|powell)\b", "#ФРС", "^GSPC"),
-    (r"\b(инфляци\w*|inflation|cpi)\b", "#Инфляция", "^GSPC"),
-    (r"\b(nvidia|нвидиа|nvda)\b", "#NVIDIA", "NVDA"),
-    (r"\b(ии|искусственн\w+\s+интеллект\w*|\bai\b|openai)\b", "#ИИ", "NVDA"),
-    (r"\b(apple|эппл|aapl)\b", "#Apple", "AAPL"),
-    (r"\b(tesla|тесла|tsla|маск\w*)\b", "#Tesla", "TSLA"),
+    (r"\b(татнефт\w*|tatneft)\b", "#Татнефть", "TATN.ME"),
+    (r"\b(x5|х5|пятерочк\w*|перекресток|чижик)\b", "#X5Group", "X5.ME"),
+    (r"\b(транснефт\w*|transneft)\b", "#Транснефть", "TRNFP.ME"),
+    (r"\b(новатэк\w*|новатек\w*|novatek)\b", "#Новатэк", "NVTK.ME"),
+    (r"\b(банк\s+санкт-петербург\w*|бспб|bspb)\b", "#БанкСПб", "BSPB.ME"),
+    (r"\b(ленэнерго|россети|lsng)\b", "#Ленэнерго", "LSNGP.ME"),
+    (r"\b(полюс\w*|polyus|золот\w*|gold)\b", "#ПолюсЗолото", "PLZL.ME"),
+
+    # Общие макро-теги РФ и мира
+    (r"\b(газпром\w*|gazprom)\b", "#Газпром", "GAZP.ME"),
+    (r"\b(цб|центробанк\w*|набиуллин\w*|ключев\w+\s+ставк\w*)\b", "#СтавкаЦБ", "IMOEX.ME"),
+    (r"\b(рубл\w*|доллар\w*|юан\w*|валют\w*|ruble\w*)\b", "#ВалютаРФ", "USDRUB=X"),
     (r"\b(нефт\w*|brent|wti|опек|opec)\b", "#Нефть", "BZ=F"),
-    (r"\b(золот\w*|gold)\b", "#Золото", "GC=F"),
+    (r"\b(фрс|fed|federal\s+reserve|пауэлл\w*|powell)\b", "#ФРС", "^GSPC"),
+    (r"\b(nvidia|нвидиа|nvda|ии|ai)\b", "#ИИ", "NVDA"),
 ]
 
 POSITIVE_WORDS = [
@@ -88,7 +97,7 @@ def analyze_news():
                 matched.append((tag, ticker))
 
         if not matched:
-            default_map = {"РФ": ("#РынокРФ", "IMOEX.ME"), "США": ("#РынокСША", "^GSPC"), "Крипта": ("#Крипторынок", "BTC-USD")}
+            default_map = {"РФ": ("#ИндексМосбиржи", "IMOEX.ME"), "США": ("#РынокСША", "^GSPC"), "Крипта": ("#Крипторынок", "BTC-USD")}
             matched.append(default_map.get(market, ("#Макроэкономика", "NONE")))
 
         for tag, ticker in matched[:3]:
