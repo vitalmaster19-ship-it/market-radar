@@ -15,14 +15,15 @@ init_tags_table()
 
 st.title("📡 Market Radar: Анализ инфошума и влияния на портфель")
 
-# Боковая панель: управление и портфель
 with st.sidebar:
     st.header("⚙️ Управление данными")
     if st.button("🔄 Собрать и проанализировать новости", use_container_width=True):
-        with st.spinner("Скачиваю ленты РФ, США и Крипты..."):
-            added = collect_news()
+        with st.spinner("Собираю данные с бирж и соцсетей..."):
+            added, logs = collect_news()
             processed = analyze_news()
-        st.success(f"Новых новостей: {added}, обработано: {processed}")
+        st.success(f"Новых: {added} | Обработано: {processed}")
+        for log in logs:
+            st.caption(log)
 
     st.divider()
     st.header("💼 Мой портфель")
@@ -43,11 +44,9 @@ if df_tags.empty:
     st.info("База пока пуста. Нажмите кнопку **«🔄 Собрать и проанализировать новости»** в меню слева!")
     st.stop()
 
-# Фильтр по рынкам
 markets = st.multiselect("Фильтр по рынкам:", options=df_tags["market"].unique(), default=list(df_tags["market"].unique()))
 df_filtered = df_tags[df_tags["market"].isin(markets)]
 
-# Агрегация тегов
 tag_stats = df_filtered.groupby(["tag", "ticker", "market"]).agg(
     mentions=("tag", "count"),
     avg_sentiment=("sentiment", "mean")
@@ -109,7 +108,7 @@ selected_tag = st.selectbox("Выберите тег для проверки р�
 tag_row = tag_stats[tag_stats["tag"] == selected_tag].iloc[0]
 ticker_symbol = tag_row["ticker"]
 
-c1, c2 = st.columns([2, 1])
+c1, c2 = st.columns([1.3, 1])
 with c1:
     if ticker_symbol and ticker_symbol != "NONE":
         try:
@@ -121,7 +120,7 @@ with c1:
                 fig_price.update_layout(title=f"График цены {ticker_symbol} за последний месяц", height=350, xaxis_rangeslider_visible=False)
                 st.plotly_chart(fig_price, use_container_width=True)
             else:
-                st.warning(f"Не удалось загрузить свечи для {ticker_symbol} (возможно, биржа закрыта или тикер недоступен в Yahoo).")
+                st.warning(f"Не удалось загрузить свечи для {ticker_symbol}.")
         except Exception as e:
             st.warning(f"Ошибка загрузки котировок: {e}")
     else:
