@@ -2,13 +2,8 @@ from concurrent.futures import ThreadPoolExecutor
 import re
 import sqlite3
 from datetime import datetime
+import requests
 import yfinance as yf
-
-try:
-    from deep_translator import GoogleTranslator
-    HAS_TRANSLATOR = True
-except ImportError:
-    HAS_TRANSLATOR = False
 
 DB_NAME = "market_radar.db"
 
@@ -41,14 +36,19 @@ def detect_ru_market(text, default_market):
 
 def translate_single(text):
     try:
-        res = GoogleTranslator(source="en", target="ru").translate(str(text))
-        return res if isinstance(res, str) and res.strip() else str(text)
+        r = requests.get(
+            "https://translated.net",
+            params={"q": str(text)[:450], "langpair": "en|ru"},
+            timeout=5
+        )
+        translated = r.json().get("responseData", {}).get("translatedText", "")
+        return translated if translated else str(text)
     except Exception:
         return str(text)
 
 
 def batch_translate_to_ru(titles):
-    if not titles or not HAS_TRANSLATOR:
+    if not titles:
         return titles, False
     with ThreadPoolExecutor(max_workers=10) as executor:
         translated = list(executor.map(translate_single, titles))
