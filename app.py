@@ -2,8 +2,9 @@ import os
 import sqlite3
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
-import streamlit.components.v1 as components
+import yfinance as yf
 from analyzer import analyze_news, init_tags_table
 from collector import collect_news, init_db
 
@@ -13,55 +14,29 @@ DB_NAME = "market_radar.db"
 init_db()
 init_tags_table()
 
-# Карта перевода тикеров в формат интерактивного графика TradingView
-TV_SYMBOL_MAP = {
-    "IMOEX.ME": "MOEX:IMOEX",
-    "SBER.ME": "MOEX:SBER",
-    "GAZP.ME": "MOEX:GAZP",
-    "LKOH.ME": "MOEX:LKOH",
-    "ROSN.ME": "MOEX:ROSN",
-    "YDEX.ME": "MOEX:YDEX",
-    "T.ME": "MOEX:T",
-    "MOEX.ME": "MOEX:MOEX",
-    "USDRUB=X": "FX_IDC:USDRUB",
-    "BTC-USD": "BINANCE:BTCUSDT",
-    "ETH-USD": "BINANCE:ETHUSDT",
-    "SOL-USD": "BINANCE:SOLUSDT",
-    "NVDA": "NASDAQ:NVDA",
-    "AAPL": "NASDAQ:AAPL",
-    "TSLA": "NASDAQ:TSLA",
-    "MSFT": "NASDAQ:MSFT",
-    "^GSPC": "FOREXCOM:SPXUSD",
-    "BZ=F": "TVC:UKOIL",
-    "GC=F": "TVC:GOLD",
-    "NG=F": "NYMEX:NG1!",
+# Сопоставление тикеров с рабочими биржевыми инструментами для графика
+CHART_TICKER_MAP = {
+    "IMOEX.ME": ("USDRUB=X", "Курс USD/RUB (индикатор рынка РФ)"),
+    "SBER.ME": ("USDRUB=X", "Курс USD/RUB (индикатор фин. сектора РФ)"),
+    "GAZP.ME": ("NG=F", "Фьючерс на природный газ (индикатор Газпрома)"),
+    "LKOH.ME": ("BZ=F", "Нефть Brent (главный драйвер Лукойла)"),
+    "ROSN.ME": ("BZ=F", "Нефть Brent (главный драйвер Роснефти)"),
+    "YDEX.ME": ("NASDAQ:NDX", "Индекс NASDAQ (бенчмарк техсектора)"),
 }
 
 
-def render_tradingview_chart(ticker_symbol):
-    tv_symbol = TV_SYMBOL_MAP.get(ticker_symbol, ticker_symbol.replace(".ME", ""))
-    html_code = f"""
-    <div class="tradingview-widget-container" style="height:380px;width:100%">
-      <div id="tradingview_chart" style="height:100%;width:100%"></div>
-      <script type="text/javascript" src="https://tradingview.com"></script>
-      <script type="text/javascript">
-      new TradingView.widget({{
-        "autosize": true,
-        "symbol": "{tv_symbol}",
-        "interval": "60",
-        "timezone": "Europe/Moscow",
-        "theme": "dark",
-        "style": "1",
-        "locale": "ru",
-        "enable_publishing": false,
-        "hide_top_toolbar": false,
-        "save_image": false,
-        "container_id": "tradingview_chart"
-      }});
-      </script>
-    </div>
-    """
-    components.html(html_code, height=390)
+def load_candles(ticker_symbol):
+    """Загружает дневные свечи за последний месяц через Yahoo Finance."""
+    if ticker_symbol in CHART_TICKER_MAP:
+        yf_symbol, title = CHART_TICKER_MAP[ticker_symbol]
+    else:
+        yf_symbol, title = ticker_symbol, f"График цены {ticker_symbol}"
+
+    try:
+        hist = yf.Ticker(yf_symbol).history(period="1mo", interval="1d")
+        return hist, title
+    except Exception:
+        return pd.DataFrame(), title
 
 
 st.title("📡 Market Radar: Анализ инфошума и влияния на портфель")
@@ -69,7 +44,7 @@ st.title("📡 Market Radar: Анализ инфошума и влияния н�
 with st.sidebar:
     st.header("⚙️ Управление данными")
     if st.button("🔄 Собрать и проанализировать новости", use_container_width=True):
-        with st.spinner("Читаю Telegram-каналы и мировые ленты..."):
+        with st.spinner("Собираю новости РФ, США и Крипты..."):
             added, logs = collect_news()
             processed = analyze_news()
         st.success(f"Новых: {added} | Обработано: {processed}")
@@ -163,13 +138,21 @@ st.divider()
 # БЛОК 3: Влияние выбранного тега на график цены
 st.subheader("📈 Связь выбранного тега с движением рынка")
 selected_tag = st.selectbox("Выберите тег для проверки реакции цены:", options=tag_stats["tag"].unique())
-tag_row = tag_stats[tag_stats["tag"] == selected_tag].iloc[0]
+tag_row = tag_stats[tag_stats["tag"] == selected_tag].iloc
 ticker_symbol = tag_row["ticker"]
 
 c1, c2 = st.columns([1.3, 1])
 with c1:
     if ticker_symbol and ticker_symbol != "NONE":
-        render_tradingview_chart(ticker_symbol)
+        hist, chart_title = load_candles(ticker_symbol)
+        if not hist.empty:
+            fig_price = go.Figure(data=[go.Candlestick(
+                x=hist.index, open=hist["Open"], high=hist["High"], low=hist["Low"], close=hist["Close"]
+            )])
+            fig_price.update_layout(title=f"{chart_title} (1 мес.)", height=360, xaxis_rangeslider_visible=False)
+            st.plotly_chart(fig_price, use_container_width=True)
+        else:
+            st.warning(f"Не удалось загрузить свечи для {ticker_symbol}.")
     else:
         st.info("Для этого общего тега не привязан конкретный биржевой тикер.")
 
