@@ -129,12 +129,13 @@ def collect_news():
     added_count = 0
     market_counts = {"РФ": 0, "США": 0, "Крипта": 0}
 
-    for (provider, market, raw_title, raw_summary, link, pub), ru_title in zip(raw_items, ru_titles):
+       for (provider, market, raw_title, raw_summary, link, pub), ru_title in zip(raw_items, ru_titles):
+        final_title = (ru_title or raw_title).strip()
         try:
             cursor.execute("""
                 INSERT INTO news (source, market, title, summary, link, published_at)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (provider, market, ru_title.strip(), f"{ru_title} ({raw_title})", link, pub))
+            """, (provider, market, final_title, f"{final_title} ({raw_title})", link, pub))
             added_count += 1
             market_counts[market] += 1
         except sqlite3.IntegrityError:
