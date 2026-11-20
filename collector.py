@@ -123,13 +123,15 @@ def collect_news():
         except Exception:
             pass
 
-    ru_titles, tr_ok = batch_translate_to_ru([item for item in raw_items])
+    titles_to_translate = [str(item) for item in raw_items]
+ru_titles, tr_ok = batch_translate_to_ru(titles_to_translate)
 
     added_count = 0
     market_counts = {"РФ": 0, "США": 0, "Крипта": 0}
 
     for (provider, market, raw_title, raw_summary, link, pub), ru_title in zip(raw_items, ru_titles):
-        final_title = (ru_title or raw_title).strip()
+        final_title = str(ru_title if isinstance(ru_title, str) and ru_title.strip() else raw_title).strip()
+
         try:
             cursor.execute("""
                 INSERT INTO news (source, market, title, summary, link, published_at)
