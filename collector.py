@@ -1,6 +1,5 @@
 import sqlite3
 from datetime import datetime
-from urllib.parse import quote
 import feedparser
 import requests
 import yfinance as yf
@@ -51,17 +50,17 @@ def collect_news():
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
 
+    base_google = "https://google.com"
     queries = [
-        ("Google РФ (Акции/Биржа)", "РФ", "https://google.com" + quote("акции мосбиржа сбербанк газпром") + "&hl=ru&gl=RU&ceid=RU:ru"),
-        ("Google РФ (ЦБ/Рубль/Нефть)", "РФ", "https://google.com" + quote("ставка ЦБ курс рубля нефть") + "&hl=ru&gl=RU&ceid=RU:ru"),
-        ("Google Крипта (RU)", "Крипта", "https://google.com" + quote("биткоин криптовалюта эфириум") + "&hl=ru&gl=RU&ceid=RU:ru"),
-        ("Habr Финансы (RU)", "РФ", "https://habr.com"),
+        ("Google РФ (Акции/Биржа)", "РФ", base_google, {"q": "акции мосбиржа сбербанк газпром", "hl": "ru", "gl": "RU", "ceid": "RU:ru"}),
+        ("Google РФ (ЦБ/Рубль/Нефть)", "РФ", base_google, {"q": "ставка ЦБ курс рубля нефть", "hl": "ru", "gl": "RU", "ceid": "RU:ru"}),
+        ("Google Крипта (RU)", "Крипта", base_google, {"q": "биткоин криптовалюта эфириум", "hl": "ru", "gl": "RU", "ceid": "RU:ru"}),
     ]
 
     ru_added = 0
-    for name, market, url in queries:
+    for name, market, url, params in queries:
         try:
-            r = requests.get(url, headers=headers, timeout=10)
+            r = requests.get(url, params=params, headers=headers, timeout=10)
             feed = feedparser.parse(r.text)
             f_added = 0
             for entry in feed.entries[:25]:
@@ -73,7 +72,7 @@ def collect_news():
             ru_added += f_added
             logs.append(f"{name}: +{f_added}")
         except Exception as e:
-            logs.append(f"{name} err: {str(e)[:30]}")
+            logs.append(f"{name} err: {str(e)[:40]}")
 
     added_count += ru_added
 
