@@ -47,10 +47,10 @@ def collect_news():
     logs = []
 
     # 1. Рынок РФ и Крипта на русском языке (с правильной кодировкой запроса через quote)
-    queries = [
-        ("Google РФ (Акции/Биржа)", "РФ", f"https://google.com{quote('акции мосбиржа сбербанк газпром')}&hl=ru&gl=RU&ceid=RU:ru"),
-        ("Google РФ (ЦБ/Рубль/Нефть)", "РФ", f"https://google.com{quote('ставка ЦБ курс рубля нефть')}&hl=ru&gl=RU&ceid=RU:ru"),
-        ("Google Крипта (RU)", "Крипта", f"https://google.com{quote('биткоин криптовалюта эфириум')}&hl=ru&gl=RU&ceid=RU:ru"),
+        queries = [
+        ("Google РФ (Акции/Биржа)", "РФ", "https://google.com" + quote("акции мосбиржа сбербанк газпром") + "&hl=ru&gl=RU&ceid=RU:ru"),
+        ("Google РФ (ЦБ/Рубль/Нефть)", "РФ", "https://google.com" + quote("ставка ЦБ курс рубля нефть") + "&hl=ru&gl=RU&ceid=RU:ru"),
+        ("Google Крипта (RU)", "Крипта", "https://google.com" + quote("биткоин криптовалюта эфириум") + "&hl=ru&gl=RU&ceid=RU:ru"),
         ("Habr Финансы (RU)", "РФ", "https://habr.com"),
     ]
 
