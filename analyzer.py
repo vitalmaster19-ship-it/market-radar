@@ -97,8 +97,8 @@ def analyze_news():
                 matched.append((tag, ticker))
 
         if not matched:
-            default_map = {"РФ": ("#ИндексМосбиржи", "IMOEX.ME"), "США": ("#РынокСША", "^GSPC"), "Крипта": ("#Крипторынок", "BTC-USD")}
-            matched.append(default_map.get(market, ("#Макроэкономика", "NONE")))
+         cursor.execute("UPDATE news SET analyzed = 1 WHERE id = ?", (news_id,))
+         continue
 
         for tag, ticker in matched[:3]:
             cursor.execute("INSERT INTO tags (news_id, tag, sentiment, ticker, created_at) VALUES (?, ?, ?, ?, ?)",
