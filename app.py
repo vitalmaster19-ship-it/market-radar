@@ -17,17 +17,27 @@ init_tags_table()
 
 
 def load_candles(ticker_symbol):
-    """Загружает свечи: для РФ (.ME) через официальный API Мосбиржи, для остальных через Yahoo."""
+    """Загружает свечи: для РФ (.ME) через международный шлюз Stooq/MOEX, для остальных через Yahoo."""
     if ticker_symbol.endswith(".ME"):
-        clean_ticker = ticker_symbol.replace(".ME", "")
-        from_date = (datetime.now() - timedelta(days=35)).strftime("%Y-%m-%d")
-        # Индекс IMOEX торгуется в другой секции (SNDX), обычные акции — в TQBR
-        if clean_ticker == "IMOEX":
-            url = f"https://moex.com{from_date}&interval=24&iss.meta=off"
-        else:
-            url = f"https://moex.com{clean_ticker}/candles.json?from={from_date}&interval=24&iss.meta=off"
+        clean_ticker = ticker_symbol.replace(".ME", "").lower()
+        # 1. Пробуем Stooq (международный агрегатор биржевых данных, открыт из США)
+        stooq_symbol = f"{clean_ticker}.ru" if clean_ticker != "imoex" else "^rts"
         try:
-            r = requests.get(url, timeout=10)
+            url = f"https://stooq.com{stooq_symbol}&i=d"
+            df = pd.read_csv(url)
+            if not df.empty and "Date" in df.columns and "Close" in df.columns:
+                df["Date"] = pd.to_datetime(df["Date"])
+                df.set_index("Date", inplace=True)
+                return df.tail(30)
+        except Exception:
+            pass
+
+        # 2. Резерв: прямой запрос к MOEX ISS с коротким таймаутом
+        from_date = (datetime.now() - timedelta(days=35)).strftime("%Y-%m-%d")
+        board = "index/boards/SNDX" if clean_ticker == "imoex" else "shares/boards/TQBR"
+        url = f"https://moex.com{board}/securities/{clean_ticker.upper()}/candles.json?from={from_date}&interval=24&iss.meta=off"
+        try:
+            r = requests.get(url, timeout=5)
             candles = r.json().get("candles", {})
             cols = candles.get("columns", [])
             data = candles.get("data", [])
@@ -37,10 +47,11 @@ def load_candles(ticker_symbol):
                 df.set_index("begin", inplace=True)
                 return df.rename(columns={"open": "Open", "high": "High", "low": "Low", "close": "Close"})
         except Exception:
-            return pd.DataFrame()
+            pass
         return pd.DataFrame()
     else:
         return yf.Ticker(ticker_symbol).history(period="1mo", interval="1d")
+
 
 
 st.title("📡 Market Radar: Анализ инфошума и влияния на портфель")
