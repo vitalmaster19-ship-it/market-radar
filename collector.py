@@ -2,6 +2,7 @@ import sqlite3
 from datetime import datetime
 from urllib.parse import quote
 import feedparser
+import requests
 import yfinance as yf
 
 DB_NAME = "market_radar.db"
@@ -46,6 +47,10 @@ def collect_news():
     added_count = 0
     logs = []
 
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    }
+
     queries = [
         ("Google РФ (Акции/Биржа)", "РФ", "https://google.com" + quote("акции мосбиржа сбербанк газпром") + "&hl=ru&gl=RU&ceid=RU:ru"),
         ("Google РФ (ЦБ/Рубль/Нефть)", "РФ", "https://google.com" + quote("ставка ЦБ курс рубля нефть") + "&hl=ru&gl=RU&ceid=RU:ru"),
@@ -56,7 +61,8 @@ def collect_news():
     ru_added = 0
     for name, market, url in queries:
         try:
-            feed = feedparser.parse(url)
+            r = requests.get(url, headers=headers, timeout=10)
+            feed = feedparser.parse(r.text)
             f_added = 0
             for entry in feed.entries[:25]:
                 title = entry.get("title", "")
