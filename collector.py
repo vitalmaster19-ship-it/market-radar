@@ -1,5 +1,6 @@
 import sqlite3
 from datetime import datetime
+from urllib.parse import quote
 import feedparser
 import yfinance as yf
 
@@ -45,17 +46,16 @@ def collect_news():
     added_count = 0
     logs = []
 
-    # 1. Рынок РФ и Крипта на русском языке через Bing News RSS и Google News RSS
-    # (работают из облака США без гео-блокировок)
-    news_feeds = [
-        ("Bing News (Акции РФ)", "РФ", "https://bing.com"),
-        ("Bing News (Экономика/ЦБ)", "РФ", "https://bing.com"),
-        ("Google News (Рынок РФ)", "РФ", "https://google.com"),
-        ("Bing News (Крипта RU)", "Крипта", "https://bing.com"),
+    # 1. Рынок РФ и Крипта на русском языке (с правильной кодировкой запроса через quote)
+    queries = [
+        ("Google РФ (Акции/Биржа)", "РФ", f"https://google.com{quote('акции мосбиржа сбербанк газпром')}&hl=ru&gl=RU&ceid=RU:ru"),
+        ("Google РФ (ЦБ/Рубль/Нефть)", "РФ", f"https://google.com{quote('ставка ЦБ курс рубля нефть')}&hl=ru&gl=RU&ceid=RU:ru"),
+        ("Google Крипта (RU)", "Крипта", f"https://google.com{quote('биткоин криптовалюта эфириум')}&hl=ru&gl=RU&ceid=RU:ru"),
+        ("Habr Финансы (RU)", "РФ", "https://habr.com"),
     ]
 
     ru_added = 0
-    for name, market, url in news_feeds:
+    for name, market, url in queries:
         try:
             feed = feedparser.parse(url)
             f_added = 0
