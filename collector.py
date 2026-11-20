@@ -1,8 +1,7 @@
 import sqlite3
-import time
 from datetime import datetime
+from curl_cffi import requests as cffi_requests
 import feedparser
-import requests
 import yfinance as yf
 
 DB_NAME = "market_radar.db"
@@ -47,23 +46,20 @@ def collect_news():
     added_count = 0
     logs = []
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    }
-
-    # 1. Прямые русскоязычные финансовые ленты (открыты из облака США)
-    ru_rss = [
-        ("Rambler Финансы", "РФ", "https://rambler.ru"),
-        ("Российская Газета (Экономика)", "РФ", "https://rg.ru"),
-        ("Habr Финансы и Инвестиции", "РФ", "https://habr.com"),
+    # Используем curl_cffi с TLS-отпечатком реального Chrome (обходит антибот-фильтры)
+    ru_feeds = [
+        ("Habr Финансы (RU)", "РФ", "https://habr.com"),
+        ("Коммерсантъ (Экономика)", "РФ", "https://kommersant.ru"),
+        ("Лента.ру (Экономика)", "РФ", "https://lenta.ru"),
         ("ForkLog (Крипта RU)", "Крипта", "https://forklog.com"),
+        ("Bits.media (Крипта RU)", "Крипта", "https://bits.media"),
     ]
 
     ru_added = 0
-    for name, market, url in ru_rss:
+    for name, market, url in ru_feeds:
         try:
-            r = requests.get(url, headers=headers, timeout=10)
-            feed = feedparser.parse(r.content)
+            r = cffi_requests.get(url, impersonate="chrome", timeout=10)
+            feed = feedparser.parse(r.text)
             f_added = 0
             for entry in feed.entries[:25]:
                 title = entry.get("title", "")
@@ -74,43 +70,11 @@ def collect_news():
             ru_added += f_added
             logs.append(f"{name}: +{f_added}")
         except Exception as e:
-            logs.append(f"{name} err: {str(e)[:30]}")
-
-    # 2. GDELT API с соблюдением лимита (1 запрос с паузой 5 сек)
-    try:
-        time.sleep(5)
-        gdelt_url = "https://gdeltproject.org"
-        params = {
-            "query": "(Мосбиржа OR Сбербанк OR Газпром OR Центробанк OR рубль) sourcelang:russian",
-            "mode": "ArtList",
-            "maxrecords": 30,
-            "format": "json",
-            "timespan": "48h"
-        }
-        r = requests.get(gdelt_url, params=params, headers=headers, timeout=12)
-        if r.text.strip().startswith("{"):
-            articles = r.json().get("articles", [])
-            g_added = 0
-            for art in articles:
-                g_added += save_news(
-                    cursor,
-                    art.get("domain", "СМИ РФ"),
-                    "РФ",
-                    art.get("title", ""),
-                    art.get("title", ""),
-                    art.get("url", ""),
-                    art.get("seendate", datetime.now().isoformat())
-                )
-            ru_added += g_added
-            logs.append(f"СМИ РФ (GDELT): +{g_added}")
-        else:
-            logs.append(f"GDELT ответ: {r.text[:40]}")
-    except Exception as e:
-        logs.append(f"GDELT err: {str(e)[:30]}")
+            logs.append(f"{name} err: {str(e)[:35]}")
 
     added_count += ru_added
 
-    # 3. Рынок США и Крипта через yfinance
+    # Рынок США и Крипта через yfinance
     yf_targets = [
         ("BTC-USD", "Крипта"),
         ("ETH-USD", "Крипта"),
