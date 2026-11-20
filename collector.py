@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import re
 import sqlite3
 from datetime import datetime
@@ -38,27 +39,21 @@ def detect_ru_market(text, default_market):
     return default_market
 
 
+def translate_single(text):
+    try:
+        return GoogleTranslator(source="en", target="ru").translate(text)
+    except Exception:
+        return text
+
+
 def batch_translate_to_ru(titles):
     if not titles or not HAS_TRANSLATOR:
         return titles, False
-    translator = GoogleTranslator(source="en", target="ru")
-    translated_all = []
-    success = False
-    chunk_size = 15
-    for i in range(0, len(titles), chunk_size):
-        chunk = titles[i:i + chunk_size]
-        joined = " ||| ".join(t.replace("\n", " ") for t in chunk)
-        try:
-            res = translator.translate(joined)
-            parts = [p.strip() for p in res.split("|||")]
-            if len(parts) == len(chunk):
-                translated_all.extend(parts)
-                success = True
-            else:
-                translated_all.extend(chunk)
-        except Exception:
-            translated_all.extend(chunk)
-    return translated_all, success
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        translated = list(executor.map(translate_single, titles))
+    # Проверяем, перевелся ли хотя бы первый заголовок
+    success = any(t != orig for t, orig in zip(translated[:5], titles[:5]))
+    return translated, success
 
 
 def collect_news():
@@ -91,7 +86,6 @@ def collect_news():
             actual_market = default_market if force_market else detect_ru_market(f"{raw_title} {raw_summary}", default_market)
             raw_items.append((provider, actual_market, raw_title, raw_summary, link, pub))
 
-    # 1. Прямой поиск по российским компаниям, Мосбирже и ЦБ РФ через yf.Search
     ru_search_queries = [
         "Sberbank",
         "Gazprom",
@@ -107,7 +101,6 @@ def collect_news():
         except Exception:
             pass
 
-    # 2. Основные тикеры (Крипта, США, Сырье и Рубль)
     yf_targets = [
         ("BTC-USD", "Крипта"),
         ("ETH-USD", "Крипта"),
@@ -130,7 +123,7 @@ def collect_news():
         except Exception:
             pass
 
-    ru_titles, tr_ok = batch_translate_to_ru([item[2] for item in raw_items])
+    ru_titles, tr_ok = batch_translate_to_ru([item for item in raw_items])
 
     added_count = 0
     market_counts = {"РФ": 0, "США": 0, "Крипта": 0}
@@ -147,7 +140,7 @@ def collect_news():
             pass
 
     logs.append(f"РФ: +{market_counts['РФ']} | США: +{market_counts['США']} | Крипта: +{market_counts['Крипта']}")
-    logs.append(f"Переводчик RU: {'Активен' if tr_ok else 'Не сработал'}")
+    logs.append(f"Переводчик RU: {'Активен' if tr_ok else 'Не сработал (сделайте Reboot app)'}")
     conn.commit()
     conn.close()
     return added_count, logs
