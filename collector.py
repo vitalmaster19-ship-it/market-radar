@@ -1,19 +1,8 @@
 import sqlite3
 from datetime import datetime
-import feedparser
 import requests
 
 DB_NAME = "market_radar.db"
-
-RSS_FEEDS = [
-    {"source": "РБК", "market": "РФ", "url": "https://rbc.ru"},
-    {"source": "Интерфакс", "market": "РФ", "url": "https://interfax.ru"},
-    {"source": "Коммерсантъ", "market": "РФ", "url": "https://kommersant.ru"},
-    {"source": "CNBC Finance", "market": "США", "url": "https://cnbc.com"},
-    {"source": "Google News США", "market": "США", "url": "https://google.com"},
-    {"source": "CoinTelegraph", "market": "Крипта", "url": "https://cointelegraph.com"},
-    {"source": "ForkLog", "market": "Крипта", "url": "https://forklog.com"},
-]
 
 
 def init_db():
@@ -35,35 +24,96 @@ def init_db():
     conn.close()
 
 
+def save_news(cursor, source, market, title, summary, link, published):
+    if not title or not link:
+        return 0
+    try:
+        cursor.execute("""
+            INSERT INTO news (source, market, title, summary, link, published_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (source, market, title.strip(), summary.strip(), link.strip(), published))
+        return 1
+    except sqlite3.IntegrityError:
+        return 0
+
+
 def collect_news():
     init_db()
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     added_count = 0
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    logs = []
 
-    for feed_info in RSS_FEEDS:
+    headers = {
+        "User-Agent": "MarketRadarBot/1.0 (Educational Finance Project)"
+    }
+
+    # 1. Крипторынок (CryptoCompare Open API)
+    try:
+        r = requests.get("https://cryptocompare.com", headers=headers, timeout=10)
+        data = r.json().get("Data", [])
+        c_added = 0
+        for item in data[:40]:
+            c_added += save_news(
+                cursor,
+                item.get("source_info", {}).get("name", "CryptoCompare"),
+                "Крипта",
+                item.get("title", ""),
+                item.get("body", "")[:300],
+                item.get("url", ""),
+                datetime.fromtimestamp(item.get("published_on", 0)).isoformat()
+            )
+        added_count += c_added
+        logs.append(f"Крипта (CryptoCompare): +{c_added}")
+    except Exception as e:
+        logs.append(f"Крипта ошибка: {e}")
+
+    # 2. Рынок РФ (Официальный открытый API Московской Биржи)
+    try:
+        r = requests.get("https://moex.com", headers=headers, timeout=10)
+        news_block = r.json().get("sitenews", {})
+        columns = news_block.get("columns", [])
+        rows = news_block.get("data", [])
+        m_added = 0
+        if "title" in columns and "id" in columns:
+            idx_id = columns.index("id")
+            idx_title = columns.index("title")
+            idx_date = columns.index("published_at") if "published_at" in columns else None
+            for row in rows[:40]:
+                news_id = row[idx_id]
+                title = row[idx_title]
+                pub = row[idx_date] if idx_date is not None else datetime.now().isoformat()
+                link = f"https://moex.com{news_id}"
+                m_added += save_news(cursor, "Мосбиржа (MOEX)", "РФ", title, title, link, pub)
+        added_count += m_added
+        logs.append(f"РФ (MOEX API): +{m_added}")
+    except Exception as e:
+        logs.append(f"РФ ошибка: {e}")
+
+    # 3. Рынок США (Reddit r/stocks и r/investing)
+    for sub in ["stocks", "investing"]:
         try:
-            r = requests.get(feed_info["url"], headers=headers, timeout=10)
-            feed = feedparser.parse(r.content)
-            for entry in feed.entries[:30]:
-                title = entry.get("title", "").strip()
-                summary = entry.get("summary", entry.get("description", "")).strip()
-                link = entry.get("link", "").strip()
-                published = entry.get("published", datetime.now().isoformat())
-                if not title or not link:
+            r = requests.get(f"https://reddit.com{sub}/hot.json?limit=25", headers=headers, timeout=10)
+            posts = r.json().get("data", {}).get("children", [])
+            r_added = 0
+            for post in posts:
+                p = post.get("data", {})
+                if p.get("stickied"):
                     continue
-                try:
-                    cursor.execute("""
-                        INSERT INTO news (source, market, title, summary, link, published_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (feed_info["source"], feed_info["market"], title, summary, link, published))
-                    added_count += 1
-                except sqlite3.IntegrityError:
-                    pass
-        except Exception:
-            pass
+                r_added += save_news(
+                    cursor,
+                    f"Reddit r/{sub}",
+                    "США",
+                    p.get("title", ""),
+                    p.get("selftext", "")[:300],
+                    f"https://reddit.com{p.get('permalink', '')}",
+                    datetime.fromtimestamp(p.get("created_utc", 0)).isoformat()
+                )
+            added_count += r_added
+            logs.append(f"США (r/{sub}): +{r_added}")
+        except Exception as e:
+            logs.append(f"США (r/{sub}) ошибка: {e}")
 
     conn.commit()
     conn.close()
-    return added_count
+    return added_count, logs
