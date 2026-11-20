@@ -41,10 +41,10 @@ def detect_ru_market(text, default_market):
 
 def translate_single(text):
     try:
-        res = GoogleTranslator(source="en", target="ru").translate(text)
-        return res if res else text
+        res = GoogleTranslator(source="en", target="ru").translate(str(text))
+        return res if isinstance(res, str) and res.strip() else str(text)
     except Exception:
-        return text
+        return str(text)
 
 
 def batch_translate_to_ru(titles):
@@ -68,12 +68,12 @@ def collect_news():
     def process_news_list(news_list, default_market, force_market=False):
         for item in news_list:
             content = item.get("content", item)
-            raw_title = content.get("title", "").strip()
-            raw_summary = content.get("summary", raw_title).strip()
-            provider = content.get("provider", {}).get("displayName", "Yahoo Finance")
+            raw_title = str(content.get("title", "")).strip()
+            raw_summary = str(content.get("summary", raw_title)).strip()
+            provider = str(content.get("provider", {}).get("displayName", "Yahoo Finance")).strip()
             link_obj = content.get("canonicalUrl") or content.get("clickThroughUrl") or {}
-            link = (link_obj.get("url") if isinstance(link_obj, dict) else content.get("link", "")).strip()
-            pub = content.get("pubDate", datetime.now().isoformat())
+            link = str(link_obj.get("url") if isinstance(link_obj, dict) else content.get("link", "")).strip()
+            pub = str(content.get("pubDate", datetime.now().isoformat())).strip()
 
             if not raw_title or not link or link in seen_links:
                 continue
@@ -84,7 +84,14 @@ def collect_news():
                 continue
 
             actual_market = default_market if force_market else detect_ru_market(f"{raw_title} {raw_summary}", default_market)
-            raw_items.append((provider, actual_market, raw_title, raw_summary, link, pub))
+            raw_items.append({
+                "provider": provider,
+                "market": actual_market,
+                "title": raw_title,
+                "summary": raw_summary,
+                "link": link,
+                "pub": pub,
+            })
 
     ru_search_queries = [
         "Sberbank",
@@ -123,26 +130,28 @@ def collect_news():
         except Exception:
             pass
 
-    titles_to_translate = [str(item) for item in raw_items]
-ru_titles, tr_ok = batch_translate_to_ru(titles_to_translate)
+    titles_list = [item.get("title", "") for item in raw_items]
+    ru_titles, tr_ok = batch_translate_to_ru(titles_list)
 
     added_count = 0
     market_counts = {"РФ": 0, "США": 0, "Крипта": 0}
 
-    for (provider, market, raw_title, raw_summary, link, pub), ru_title in zip(raw_items, ru_titles):
-        final_title = str(ru_title if isinstance(ru_title, str) and ru_title.strip() else raw_title).strip()
+    for item, ru_title in zip(raw_items, ru_titles):
+        final_title = str(ru_title).strip()
+        raw_title = item.get("title", "")
+        market = item.get("market", "США")
         try:
             cursor.execute("""
                 INSERT INTO news (source, market, title, summary, link, published_at)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (provider, market, final_title, f"{final_title} ({raw_title})", link, pub))
+            """, (item.get("provider"), market, final_title, f"{final_title} ({raw_title})", item.get("link"), item.get("pub")))
             added_count += 1
             market_counts[market] += 1
         except sqlite3.IntegrityError:
             pass
 
     logs.append(f"РФ: +{market_counts['РФ']} | США: +{market_counts['США']} | Крипта: +{market_counts['Крипта']}")
-    logs.append(f"Переводчик RU: {'Активен' if tr_ok else 'Не сработал (сделайте Reboot app)'}")
+    logs.append(f"Переводчик RU: {'Активен' if tr_ok else 'Не сработал'}")
     conn.commit()
     conn.close()
     return added_count, logs
