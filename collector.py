@@ -52,7 +52,6 @@ def batch_translate_to_ru(titles):
         return titles, False
     with ThreadPoolExecutor(max_workers=10) as executor:
         translated = list(executor.map(translate_single, titles))
-    # Проверяем, перевелся ли хотя бы первый заголовок
     success = any(t != orig for t, orig in zip(translated[:5], titles[:5]))
     return translated, success
 
@@ -129,7 +128,7 @@ def collect_news():
     added_count = 0
     market_counts = {"РФ": 0, "США": 0, "Крипта": 0}
 
-       for (provider, market, raw_title, raw_summary, link, pub), ru_title in zip(raw_items, ru_titles):
+    for (provider, market, raw_title, raw_summary, link, pub), ru_title in zip(raw_items, ru_titles):
         final_title = (ru_title or raw_title).strip()
         try:
             cursor.execute("""
