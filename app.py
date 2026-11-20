@@ -1,11 +1,9 @@
+import os
 import sqlite3
-from datetime import datetime, timedelta
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-import requests
 import streamlit as st
-import yfinance as yf
+import streamlit.components.v1 as components
 from analyzer import analyze_news, init_tags_table
 from collector import collect_news, init_db
 
@@ -15,43 +13,55 @@ DB_NAME = "market_radar.db"
 init_db()
 init_tags_table()
 
+# Карта перевода тикеров в формат интерактивного графика TradingView
+TV_SYMBOL_MAP = {
+    "IMOEX.ME": "MOEX:IMOEX",
+    "SBER.ME": "MOEX:SBER",
+    "GAZP.ME": "MOEX:GAZP",
+    "LKOH.ME": "MOEX:LKOH",
+    "ROSN.ME": "MOEX:ROSN",
+    "YDEX.ME": "MOEX:YDEX",
+    "T.ME": "MOEX:T",
+    "MOEX.ME": "MOEX:MOEX",
+    "USDRUB=X": "FX_IDC:USDRUB",
+    "BTC-USD": "BINANCE:BTCUSDT",
+    "ETH-USD": "BINANCE:ETHUSDT",
+    "SOL-USD": "BINANCE:SOLUSDT",
+    "NVDA": "NASDAQ:NVDA",
+    "AAPL": "NASDAQ:AAPL",
+    "TSLA": "NASDAQ:TSLA",
+    "MSFT": "NASDAQ:MSFT",
+    "^GSPC": "FOREXCOM:SPXUSD",
+    "BZ=F": "TVC:UKOIL",
+    "GC=F": "TVC:GOLD",
+    "NG=F": "NYMEX:NG1!",
+}
 
-def load_candles(ticker_symbol):
-    """Загружает свечи: для РФ (.ME) через международный шлюз Stooq/MOEX, для остальных через Yahoo."""
-    if ticker_symbol.endswith(".ME"):
-        clean_ticker = ticker_symbol.replace(".ME", "").lower()
-        # 1. Пробуем Stooq (международный агрегатор биржевых данных, открыт из США)
-        stooq_symbol = f"{clean_ticker}.ru" if clean_ticker != "imoex" else "^rts"
-        try:
-            url = f"https://stooq.com{stooq_symbol}&i=d"
-            df = pd.read_csv(url)
-            if not df.empty and "Date" in df.columns and "Close" in df.columns:
-                df["Date"] = pd.to_datetime(df["Date"])
-                df.set_index("Date", inplace=True)
-                return df.tail(30)
-        except Exception:
-            pass
 
-        # 2. Резерв: прямой запрос к MOEX ISS с коротким таймаутом
-        from_date = (datetime.now() - timedelta(days=35)).strftime("%Y-%m-%d")
-        board = "index/boards/SNDX" if clean_ticker == "imoex" else "shares/boards/TQBR"
-        url = f"https://moex.com{board}/securities/{clean_ticker.upper()}/candles.json?from={from_date}&interval=24&iss.meta=off"
-        try:
-            r = requests.get(url, timeout=5)
-            candles = r.json().get("candles", {})
-            cols = candles.get("columns", [])
-            data = candles.get("data", [])
-            if data and cols:
-                df = pd.DataFrame(data, columns=cols)
-                df["begin"] = pd.to_datetime(df["begin"])
-                df.set_index("begin", inplace=True)
-                return df.rename(columns={"open": "Open", "high": "High", "low": "Low", "close": "Close"})
-        except Exception:
-            pass
-        return pd.DataFrame()
-    else:
-        return yf.Ticker(ticker_symbol).history(period="1mo", interval="1d")
-
+def render_tradingview_chart(ticker_symbol):
+    tv_symbol = TV_SYMBOL_MAP.get(ticker_symbol, ticker_symbol.replace(".ME", ""))
+    html_code = f"""
+    <div class="tradingview-widget-container" style="height:380px;width:100%">
+      <div id="tradingview_chart" style="height:100%;width:100%"></div>
+      <script type="text/javascript" src="https://tradingview.com"></script>
+      <script type="text/javascript">
+      new TradingView.widget({{
+        "autosize": true,
+        "symbol": "{tv_symbol}",
+        "interval": "60",
+        "timezone": "Europe/Moscow",
+        "theme": "dark",
+        "style": "1",
+        "locale": "ru",
+        "enable_publishing": false,
+        "hide_top_toolbar": false,
+        "save_image": false,
+        "container_id": "tradingview_chart"
+      }});
+      </script>
+    </div>
+    """
+    components.html(html_code, height=390)
 
 
 st.title("📡 Market Radar: Анализ инфошума и влияния на портфель")
@@ -59,17 +69,24 @@ st.title("📡 Market Radar: Анализ инфошума и влияния н�
 with st.sidebar:
     st.header("⚙️ Управление данными")
     if st.button("🔄 Собрать и проанализировать новости", use_container_width=True):
-        with st.spinner("Собираю данные с бирж и соцсетей..."):
+        with st.spinner("Читаю Telegram-каналы и мировые ленты..."):
             added, logs = collect_news()
             processed = analyze_news()
         st.success(f"Новых: {added} | Обработано: {processed}")
         for log in logs:
             st.caption(log)
 
+    if st.button("🗑️ Очистить базу и собрать заново", use_container_width=True):
+        if os.path.exists(DB_NAME):
+            os.remove(DB_NAME)
+        init_db()
+        init_tags_table()
+        st.rerun()
+
     st.divider()
     st.header("💼 Мой портфель")
-    st.caption("Укажите тикеры через запятую (например: BTC-USD, NVDA, AAPL, SBER.ME, GAZP.ME, BZ=F)")
-    default_portfolio = "BTC-USD, ETH-USD, NVDA, AAPL, SBER.ME, GAZP.ME"
+    st.caption("Укажите тикеры через запятую (например: BTC-USD, NVDA, AAPL, SBER.ME, GAZP.ME, LKOH.ME)")
+    default_portfolio = "BTC-USD, ETH-USD, NVDA, AAPL, SBER.ME, GAZP.ME, LKOH.ME"
     user_tickers_raw = st.text_area("Ваши активы:", value=default_portfolio, height=100)
     portfolio_tickers = [t.strip().upper() for t in user_tickers_raw.split(",") if t.strip()]
 
@@ -146,29 +163,18 @@ st.divider()
 # БЛОК 3: Влияние выбранного тега на график цены
 st.subheader("📈 Связь выбранного тега с движением рынка")
 selected_tag = st.selectbox("Выберите тег для проверки реакции цены:", options=tag_stats["tag"].unique())
-tag_row = tag_stats[tag_stats["tag"] == selected_tag].iloc[0]
+tag_row = tag_stats[tag_stats["tag"] == selected_tag].iloc
 ticker_symbol = tag_row["ticker"]
 
 c1, c2 = st.columns([1.3, 1])
 with c1:
     if ticker_symbol and ticker_symbol != "NONE":
-        try:
-            hist = load_candles(ticker_symbol)
-            if not hist.empty:
-                fig_price = go.Figure(data=[go.Candlestick(
-                    x=hist.index, open=hist["Open"], high=hist["High"], low=hist["Low"], close=hist["Close"]
-                )])
-                fig_price.update_layout(title=f"График цены {ticker_symbol} за последний месяц", height=350, xaxis_rangeslider_visible=False)
-                st.plotly_chart(fig_price, use_container_width=True)
-            else:
-                st.warning(f"Не удалось загрузить свечи для {ticker_symbol}.")
-        except Exception as e:
-            st.warning(f"Ошибка загрузки котировок: {e}")
+        render_tradingview_chart(ticker_symbol)
     else:
         st.info("Для этого общего тега не привязан конкретный биржевой тикер.")
 
 with c2:
-    st.markdown(f"**Последние новости по тегу {selected_tag}:**")
+    st.markdown(f"**Последние новости и посты по тегу {selected_tag}:**")
     tag_news = df_filtered[df_filtered["tag"] == selected_tag].drop_duplicates(subset=["title"]).head(7)
     for _, n_row in tag_news.iterrows():
         icon = "🟢" if n_row["sentiment"] > 0.3 else ("🔴" if n_row["sentiment"] < -0.3 else "⚪")
