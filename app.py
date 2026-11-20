@@ -1,7 +1,9 @@
 import sqlite3
+from datetime import datetime, timedelta
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import requests
 import streamlit as st
 import yfinance as yf
 from analyzer import analyze_news, init_tags_table
@@ -12,6 +14,34 @@ DB_NAME = "market_radar.db"
 
 init_db()
 init_tags_table()
+
+
+def load_candles(ticker_symbol):
+    """Загружает свечи: для РФ (.ME) через официальный API Мосбиржи, для остальных через Yahoo."""
+    if ticker_symbol.endswith(".ME"):
+        clean_ticker = ticker_symbol.replace(".ME", "")
+        from_date = (datetime.now() - timedelta(days=35)).strftime("%Y-%m-%d")
+        # Индекс IMOEX торгуется в другой секции (SNDX), обычные акции — в TQBR
+        if clean_ticker == "IMOEX":
+            url = f"https://moex.com{from_date}&interval=24&iss.meta=off"
+        else:
+            url = f"https://moex.com{clean_ticker}/candles.json?from={from_date}&interval=24&iss.meta=off"
+        try:
+            r = requests.get(url, timeout=10)
+            candles = r.json().get("candles", {})
+            cols = candles.get("columns", [])
+            data = candles.get("data", [])
+            if data and cols:
+                df = pd.DataFrame(data, columns=cols)
+                df["begin"] = pd.to_datetime(df["begin"])
+                df.set_index("begin", inplace=True)
+                return df.rename(columns={"open": "Open", "high": "High", "low": "Low", "close": "Close"})
+        except Exception:
+            return pd.DataFrame()
+        return pd.DataFrame()
+    else:
+        return yf.Ticker(ticker_symbol).history(period="1mo", interval="1d")
+
 
 st.title("📡 Market Radar: Анализ инфошума и влияния на портфель")
 
@@ -72,7 +102,7 @@ else:
 st.divider()
 
 # БЛОК 2: Пузырьковое облако тегов и Топ тем
-col1, col2 = st.columns([2, 1])
+col1, col2 = st.columns([1.4, 1])
 
 with col1:
     st.subheader("🫧 Облако популярных тегов (размер = шум, цвет = сентимент)")
@@ -112,7 +142,7 @@ c1, c2 = st.columns([1.3, 1])
 with c1:
     if ticker_symbol and ticker_symbol != "NONE":
         try:
-            hist = yf.Ticker(ticker_symbol).history(period="1mo", interval="1d")
+            hist = load_candles(ticker_symbol)
             if not hist.empty:
                 fig_price = go.Figure(data=[go.Candlestick(
                     x=hist.index, open=hist["Open"], high=hist["High"], low=hist["Low"], close=hist["Close"]
