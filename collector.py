@@ -1,5 +1,7 @@
 import sqlite3
+import time
 from datetime import datetime
+import feedparser
 import requests
 import yfinance as yf
 
@@ -45,43 +47,70 @@ def collect_news():
     added_count = 0
     logs = []
 
-    # 1. GDELT API — мировая база новостей в реальном времени (индексирует РБК, ТАСС, Интерфакс, Коммерсантъ)
-    # Отлично работает из дата-центров США без ключей и капчи
-    gdelt_queries = [
-        ("СМИ РФ (Акции/Биржа)", "РФ", "(Мосбиржа OR Сбербанк OR Газпром OR Лукойл) sourcelang:russian"),
-        ("СМИ РФ (ЦБ/Рубль/Экономика)", "РФ", "(Центробанк OR Набиуллина OR рубль OR инфляция) sourcelang:russian"),
-        ("СМИ РФ (Криптовалюты)", "Крипта", "(биткоин OR криптовалюта OR эфириум) sourcelang:russian"),
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    }
+
+    # 1. Прямые русскоязычные финансовые ленты (открыты из облака США)
+    ru_rss = [
+        ("Rambler Финансы", "РФ", "https://rambler.ru"),
+        ("Российская Газета (Экономика)", "РФ", "https://rg.ru"),
+        ("Habr Финансы и Инвестиции", "РФ", "https://habr.com"),
+        ("ForkLog (Крипта RU)", "Крипта", "https://forklog.com"),
     ]
 
     ru_added = 0
-    gdelt_url = "https://gdeltproject.org"
-
-    for name, market, q in gdelt_queries:
+    for name, market, url in ru_rss:
         try:
-            params = {
-                "query": q,
-                "mode": "ArtList",
-                "maxrecords": 25,
-                "format": "json",
-                "timespan": "24h"
-            }
-            r = requests.get(gdelt_url, params=params, timeout=12)
-            articles = r.json().get("articles", [])
+            r = requests.get(url, headers=headers, timeout=10)
+            feed = feedparser.parse(r.content)
             f_added = 0
-            for art in articles:
-                title = art.get("title", "")
-                domain = art.get("domain", name)
-                link = art.get("url", "")
-                pub = art.get("seendate", datetime.now().isoformat())
-                f_added += save_news(cursor, domain, market, title, title, link, pub)
+            for entry in feed.entries[:25]:
+                title = entry.get("title", "")
+                summary = entry.get("summary", entry.get("description", ""))
+                link = entry.get("link", "")
+                pub = entry.get("published", datetime.now().isoformat())
+                f_added += save_news(cursor, name, market, title, summary, link, pub)
             ru_added += f_added
             logs.append(f"{name}: +{f_added}")
         except Exception as e:
-            logs.append(f"{name} err: {str(e)[:40]}")
+            logs.append(f"{name} err: {str(e)[:30]}")
+
+    # 2. GDELT API с соблюдением лимита (1 запрос с паузой 5 сек)
+    try:
+        time.sleep(5)
+        gdelt_url = "https://gdeltproject.org"
+        params = {
+            "query": "(Мосбиржа OR Сбербанк OR Газпром OR Центробанк OR рубль) sourcelang:russian",
+            "mode": "ArtList",
+            "maxrecords": 30,
+            "format": "json",
+            "timespan": "48h"
+        }
+        r = requests.get(gdelt_url, params=params, headers=headers, timeout=12)
+        if r.text.strip().startswith("{"):
+            articles = r.json().get("articles", [])
+            g_added = 0
+            for art in articles:
+                g_added += save_news(
+                    cursor,
+                    art.get("domain", "СМИ РФ"),
+                    "РФ",
+                    art.get("title", ""),
+                    art.get("title", ""),
+                    art.get("url", ""),
+                    art.get("seendate", datetime.now().isoformat())
+                )
+            ru_added += g_added
+            logs.append(f"СМИ РФ (GDELT): +{g_added}")
+        else:
+            logs.append(f"GDELT ответ: {r.text[:40]}")
+    except Exception as e:
+        logs.append(f"GDELT err: {str(e)[:30]}")
 
     added_count += ru_added
 
-    # 2. Рынок США и Крипта через yfinance
+    # 3. Рынок США и Крипта через yfinance
     yf_targets = [
         ("BTC-USD", "Крипта"),
         ("ETH-USD", "Крипта"),
