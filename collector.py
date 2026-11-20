@@ -46,8 +46,7 @@ def collect_news():
     added_count = 0
     logs = []
 
-    # 1. Рынок РФ и Крипта на русском языке (с правильной кодировкой запроса через quote)
-        queries = [
+    queries = [
         ("Google РФ (Акции/Биржа)", "РФ", "https://google.com" + quote("акции мосбиржа сбербанк газпром") + "&hl=ru&gl=RU&ceid=RU:ru"),
         ("Google РФ (ЦБ/Рубль/Нефть)", "РФ", "https://google.com" + quote("ставка ЦБ курс рубля нефть") + "&hl=ru&gl=RU&ceid=RU:ru"),
         ("Google Крипта (RU)", "Крипта", "https://google.com" + quote("биткоин криптовалюта эфириум") + "&hl=ru&gl=RU&ceid=RU:ru"),
@@ -72,7 +71,6 @@ def collect_news():
 
     added_count += ru_added
 
-    # 2. Рынок США и Крипта через yfinance
     yf_targets = [
         ("BTC-USD", "Крипта"),
         ("ETH-USD", "Крипта"),
