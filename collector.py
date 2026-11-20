@@ -1,6 +1,5 @@
 import sqlite3
 from datetime import datetime
-import feedparser
 import yfinance as yf
 
 DB_NAME = "market_radar.db"
@@ -45,21 +44,34 @@ def collect_news():
     added_count = 0
     logs = []
 
-    # 1. Прямой сбор новостей через yfinance (США и Крипта — работает 100% в облаке)
+    # Прямой сбор новостей по всем 3 рынкам через надежный канал yfinance
     yf_targets = [
+        # Крипта
         ("BTC-USD", "Крипта"),
         ("ETH-USD", "Крипта"),
+        ("SOL-USD", "Крипта"),
+        # США и Сырье
         ("NVDA", "США"),
         ("AAPL", "США"),
+        ("TSLA", "США"),
+        ("MSFT", "США"),
         ("^GSPC", "США"),
         ("BZ=F", "США"),
+        ("GC=F", "США"),
+        # Рынок РФ и Рубль
+        ("IMOEX.ME", "РФ"),
+        ("SBER.ME", "РФ"),
+        ("GAZP.ME", "РФ"),
+        ("LKOH.ME", "РФ"),
+        ("USDRUB=X", "РФ"),
     ]
-    yf_added = 0
+
+    market_counts = {"Крипта": 0, "США": 0, "РФ": 0}
+
     for ticker, market in yf_targets:
         try:
             news_list = yf.Ticker(ticker).news
             for item in news_list:
-                # Поддержка новой и старой структуры ответа yfinance
                 content = item.get("content", item)
                 title = content.get("title", "")
                 summary = content.get("summary", title)
@@ -69,36 +81,13 @@ def collect_news():
                 link = link_obj.get("url") if isinstance(link_obj, dict) else content.get("link", "")
                 pub = content.get("pubDate", datetime.now().isoformat())
 
-                yf_added += save_news(cursor, provider, market, title, summary, link, pub)
+                added = save_news(cursor, provider, market, title, summary, link, pub)
+                added_count += added
+                market_counts[market] += added
         except Exception as e:
-            logs.append(f"YF ({ticker}) err: {str(e)[:40]}")
+            logs.append(f"{ticker}: {str(e)[:35]}")
 
-    added_count += yf_added
-    logs.append(f"Yahoo Finance (США/Крипта): +{yf_added}")
-
-    # 2. Прямой feedparser для RSS (РФ и Мир)
-    rss_feeds = [
-        ("Коммерсантъ", "РФ", "https://kommersant.ru"),
-        ("Лента.ру Экономика", "РФ", "https://lenta.ru"),
-        ("Ведомости", "РФ", "https://vedomosti.ru"),
-        ("CoinTelegraph", "Крипта", "https://cointelegraph.com"),
-        ("CNBC", "США", "https://cnbc.com"),
-    ]
-
-    for name, market, url in rss_feeds:
-        try:
-            feed = feedparser.parse(url)
-            f_added = 0
-            for entry in feed.entries[:25]:
-                title = entry.get("title", "")
-                summary = entry.get("summary", entry.get("description", ""))
-                link = entry.get("link", "")
-                pub = entry.get("published", datetime.now().isoformat())
-                f_added += save_news(cursor, name, market, title, summary, link, pub)
-            added_count += f_added
-            logs.append(f"{name}: +{f_added} (в ленте: {len(feed.entries)})")
-        except Exception as e:
-            logs.append(f"{name} ошибка: {str(e)[:40]}")
+    logs.insert(0, f"Крипта: +{market_counts['Крипта']} | США: +{market_counts['США']} | РФ: +{market_counts['РФ']}")
 
     conn.commit()
     conn.close()
