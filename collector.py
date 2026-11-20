@@ -131,7 +131,6 @@ ru_titles, tr_ok = batch_translate_to_ru(titles_to_translate)
 
     for (provider, market, raw_title, raw_summary, link, pub), ru_title in zip(raw_items, ru_titles):
         final_title = str(ru_title if isinstance(ru_title, str) and ru_title.strip() else raw_title).strip()
-
         try:
             cursor.execute("""
                 INSERT INTO news (source, market, title, summary, link, published_at)
