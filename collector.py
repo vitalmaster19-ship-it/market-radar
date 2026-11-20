@@ -41,7 +41,8 @@ def detect_ru_market(text, default_market):
 
 def translate_single(text):
     try:
-        return GoogleTranslator(source="en", target="ru").translate(text)
+        res = GoogleTranslator(source="en", target="ru").translate(text)
+        return res if res else text
     except Exception:
         return text
 
