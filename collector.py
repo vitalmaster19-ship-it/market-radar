@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import datetime
 import feedparser
-import requests
+import yfinance as yf
 
 DB_NAME = "market_radar.db"
 
@@ -45,61 +45,60 @@ def collect_news():
     added_count = 0
     logs = []
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    }
+    # 1. Прямой сбор новостей через yfinance (США и Крипта — работает 100% в облаке)
+    yf_targets = [
+        ("BTC-USD", "Крипта"),
+        ("ETH-USD", "Крипта"),
+        ("NVDA", "США"),
+        ("AAPL", "США"),
+        ("^GSPC", "США"),
+        ("BZ=F", "США"),
+    ]
+    yf_added = 0
+    for ticker, market in yf_targets:
+        try:
+            news_list = yf.Ticker(ticker).news
+            for item in news_list:
+                # Поддержка новой и старой структуры ответа yfinance
+                content = item.get("content", item)
+                title = content.get("title", "")
+                summary = content.get("summary", title)
+                provider = content.get("provider", {}).get("displayName", "Yahoo Finance")
+                
+                link_obj = content.get("canonicalUrl") or content.get("clickThroughUrl") or {}
+                link = link_obj.get("url") if isinstance(link_obj, dict) else content.get("link", "")
+                pub = content.get("pubDate", datetime.now().isoformat())
 
-    # 1. Надежные RSS и Google News (отлично работают из облака США)
-    feeds = [
-        ("Google News РФ", "РФ", "https://google.com"),
-        ("ТАСС Экономика", "РФ", "https://tass.ru"),
-        ("Google News США", "США", "https://google.com"),
-        ("CNBC Finance", "США", "https://cnbc.com"),
+                yf_added += save_news(cursor, provider, market, title, summary, link, pub)
+        except Exception as e:
+            logs.append(f"YF ({ticker}) err: {str(e)[:40]}")
+
+    added_count += yf_added
+    logs.append(f"Yahoo Finance (США/Крипта): +{yf_added}")
+
+    # 2. Прямой feedparser для RSS (РФ и Мир)
+    rss_feeds = [
+        ("Коммерсантъ", "РФ", "https://kommersant.ru"),
+        ("Лента.ру Экономика", "РФ", "https://lenta.ru"),
+        ("Ведомости", "РФ", "https://vedomosti.ru"),
         ("CoinTelegraph", "Крипта", "https://cointelegraph.com"),
-        ("Google News Крипта", "Крипта", "https://google.com"),
+        ("CNBC", "США", "https://cnbc.com"),
     ]
 
-    for name, market, url in feeds:
+    for name, market, url in rss_feeds:
         try:
-            r = requests.get(url, headers=headers, timeout=10)
-            parsed = feedparser.parse(r.content)
+            feed = feedparser.parse(url)
             f_added = 0
-            for entry in parsed.entries[:25]:
+            for entry in feed.entries[:25]:
                 title = entry.get("title", "")
                 summary = entry.get("summary", entry.get("description", ""))
                 link = entry.get("link", "")
                 pub = entry.get("published", datetime.now().isoformat())
                 f_added += save_news(cursor, name, market, title, summary, link, pub)
             added_count += f_added
-            logs.append(f"{name}: +{f_added}")
+            logs.append(f"{name}: +{f_added} (в ленте: {len(feed.entries)})")
         except Exception as e:
-            logs.append(f"{name} ошибка: {str(e)[:60]}")
-
-    # 2. Reddit Finance (исправленная ссылка)
-    for sub in ["stocks", "CryptoCurrency"]:
-        try:
-            reddit_url = "https://reddit.com" + "/r/" + sub + "/hot.json?limit=20"
-            r = requests.get(reddit_url, headers={"User-Agent": "python:marketradar:v1.0"}, timeout=10)
-            posts = r.json().get("data", {}).get("children", [])
-            r_added = 0
-            market_label = "Крипта" if sub == "CryptoCurrency" else "США"
-            for post in posts:
-                p = post.get("data", {})
-                if p.get("stickied"):
-                    continue
-                r_added += save_news(
-                    cursor,
-                    f"Reddit r/{sub}",
-                    market_label,
-                    p.get("title", ""),
-                    p.get("selftext", "")[:300],
-                    "https://reddit.com" + p.get("permalink", ""),
-                    datetime.fromtimestamp(p.get("created_utc", 0)).isoformat()
-                )
-            added_count += r_added
-            logs.append(f"Reddit r/{sub}: +{r_added}")
-        except Exception as e:
-            logs.append(f"Reddit r/{sub} ошибка: {str(e)[:60]}")
+            logs.append(f"{name} ошибка: {str(e)[:40]}")
 
     conn.commit()
     conn.close()
